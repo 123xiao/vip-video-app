@@ -1,14 +1,51 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import {
+  addToPlayHistory,
+  updatePlayProgress,
+  getPlayHistory,
+  PlayHistoryItem,
+  detectPlatform,
+} from "@/lib/playHistory";
 
 interface VideoPlayerProps {
   url: string;
+  onProgressUpdate?: (currentTime: number, duration: number) => void;
 }
 
-const VideoPlayer = ({ url }: VideoPlayerProps) => {
+const VideoPlayer = ({ url, onProgressUpdate }: VideoPlayerProps) => {
   const [loading, setLoading] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const jxUrl = `https://jx.aidouer.net/?url=${encodeURIComponent(url)}`;
+
+  // 检查是否存在播放记录
+  useEffect(() => {
+    if (!url) return;
+
+    // 查找该URL的播放记录
+    const history = getPlayHistory();
+    const existingRecord = history.find((item) => item.url === url);
+    const platform = detectPlatform(url);
+
+    if (existingRecord) {
+      // 记录此次播放
+      addToPlayHistory({
+        url,
+        platform,
+        timestamp: Date.now(),
+        currentTime: existingRecord.currentTime,
+        duration: existingRecord.duration,
+      });
+    } else {
+      // 添加新的播放记录
+      addToPlayHistory({
+        url,
+        platform,
+        timestamp: Date.now(),
+      });
+    }
+  }, [url]);
 
   useEffect(() => {
     // 当URL改变时重置加载状态
@@ -20,6 +57,56 @@ const VideoPlayer = ({ url }: VideoPlayerProps) => {
     }, 1000);
 
     return () => clearTimeout(timer);
+  }, [url]);
+
+  // 定期更新播放进度
+  useEffect(() => {
+    if (!url) return;
+
+    // 播放进度更新间隔（每30秒更新一次）
+    const progressInterval = setInterval(() => {
+      try {
+        // 尝试从iframe获取播放进度
+        // 注意：这可能存在跨域限制，实际应用中可能需要不同的方法
+        if (iframeRef.current) {
+          // 由于跨域限制，我们无法直接获取iframe内容的播放进度
+          // 此处仅为示例，实际项目中可能需要通过消息传递或其他方式获取
+
+          // 模拟更新进度（实际项目中应替换为真实数据）
+          const mockCurrentTime = Math.floor(Math.random() * 100);
+          const mockDuration = 120;
+
+          updatePlayProgress(url, mockCurrentTime, mockDuration);
+
+          if (onProgressUpdate) {
+            onProgressUpdate(mockCurrentTime, mockDuration);
+          }
+        }
+      } catch (error) {
+        console.error("更新播放进度失败", error);
+      }
+    }, 30000); // 每30秒更新一次
+
+    return () => clearInterval(progressInterval);
+  }, [url, onProgressUpdate]);
+
+  // 离开页面前保存播放进度
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (url) {
+        // 模拟保存最终进度（实际项目中应替换为真实数据）
+        const mockCurrentTime = Math.floor(Math.random() * 100);
+        const mockDuration = 120;
+        updatePlayProgress(url, mockCurrentTime, mockDuration);
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      handleBeforeUnload(); // 组件卸载时也保存进度
+    };
   }, [url]);
 
   if (!url) {
@@ -64,6 +151,7 @@ const VideoPlayer = ({ url }: VideoPlayerProps) => {
         </div>
       )}
       <iframe
+        ref={iframeRef}
         src={jxUrl}
         className="w-full h-[500px] rounded-lg"
         frameBorder="0"

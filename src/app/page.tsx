@@ -1,15 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import VideoPlayer from "@/components/VideoPlayer";
 import FAQ from "../components/FAQ";
 import PlatformLinks from "@/components/PlatformLinks";
+import MovieCards from "@/components/MovieCards";
+import {
+  getPlayHistory,
+  removeFromPlayHistory,
+  clearPlayHistory,
+  PlayHistoryItem,
+  formatDateTime,
+  formatPlayTime,
+  detectPlatform,
+} from "@/lib/playHistory";
 
 export default function Home() {
   const [videoUrl, setVideoUrl] = useState("");
   const [inputValue, setInputValue] = useState("");
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<PlayHistoryItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 初始化时从本地存储加载播放历史
+  useEffect(() => {
+    const savedHistory = getPlayHistory();
+    setHistory(savedHistory);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,14 +36,43 @@ export default function Home() {
     // 模拟加载延迟，实际项目中可能不需要
     setTimeout(() => {
       setVideoUrl(inputValue);
-
-      // 添加到历史记录
-      if (!history.includes(inputValue)) {
-        setHistory((prev) => [inputValue, ...prev].slice(0, 10));
-      }
-
       setIsSubmitting(false);
+
+      // 历史记录已在VideoPlayer组件中更新
     }, 800);
+  };
+
+  // 处理播放进度更新
+  const handleProgressUpdate = (currentTime: number, duration: number) => {
+    // 当播放进度更新时，刷新历史记录列表
+    setHistory(getPlayHistory());
+  };
+
+  // 删除历史记录
+  const handleRemoveHistory = (url: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // 阻止事件冒泡
+    const updatedHistory = removeFromPlayHistory(url);
+    setHistory(updatedHistory);
+  };
+
+  // 清空所有历史记录
+  const handleClearHistory = () => {
+    clearPlayHistory();
+    setHistory([]);
+  };
+
+  // 当选择电影卡片时
+  const handleSelectMovie = (url: string) => {
+    setInputValue(url);
+    setVideoUrl(url);
+
+    // 自动滚动到播放器位置
+    setTimeout(() => {
+      const playerElement = document.getElementById("video-player");
+      if (playerElement) {
+        playerElement.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 300);
   };
 
   return (
@@ -117,25 +162,82 @@ export default function Home() {
       </header>
 
       <main className="max-w-6xl mx-auto">
-        <VideoPlayer url={videoUrl} />
+        <div className="mb-8" id="video-player">
+          <VideoPlayer url={videoUrl} onProgressUpdate={handleProgressUpdate} />
+        </div>
+
+        {/* 快捷播放模块 */}
+        <div className="mb-8">
+          <MovieCards onSelectMovie={handleSelectMovie} />
+        </div>
 
         {history.length > 0 && (
           <div className="mt-8">
-            <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">
-              播放历史
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {history.map((url, index) => (
-                <button
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                播放历史
+              </h3>
+              <button
+                onClick={handleClearHistory}
+                className="text-xs text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+              >
+                清空历史
+              </button>
+            </div>
+            <div className="space-y-2">
+              {history.map((item, index) => (
+                <div
                   key={index}
-                  onClick={() => {
-                    setInputValue(url);
-                    setVideoUrl(url);
-                  }}
-                  className="text-left px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg truncate"
+                  className="relative bg-white dark:bg-gray-800 rounded-lg p-3 shadow hover:shadow-md transition-shadow"
                 >
-                  {url}
-                </button>
+                  <button
+                    onClick={() => {
+                      setInputValue(item.url);
+                      setVideoUrl(item.url);
+                    }}
+                    className="text-left w-full pr-24"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block px-2 py-1 text-xs text-white bg-blue-500 dark:bg-blue-600 rounded-md">
+                        {item.platform || detectPlatform(item.url)}
+                      </span>
+                      <div className="truncate text-blue-600 dark:text-blue-400 font-medium">
+                        {item.title || item.url}
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      <span>播放于: {formatDateTime(item.timestamp)}</span>
+                      {item.currentTime !== undefined && (
+                        <span>
+                          进度: {formatPlayTime(item.currentTime)}{" "}
+                          {item.duration
+                            ? `/ ${formatPlayTime(item.duration)}`
+                            : ""}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => handleRemoveHistory(item.url, e)}
+                    className="absolute right-3 top-3 text-gray-400 hover:text-red-500 dark:hover:text-red-400"
+                    title="删除"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
               ))}
             </div>
           </div>
